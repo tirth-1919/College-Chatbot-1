@@ -14,7 +14,7 @@ from typing import Literal
 from fastapi import FastAPI, Depends, HTTPException, Response, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from .db import Base, engine, get_db, SessionLocal, set_tenant_scope
@@ -76,29 +76,89 @@ def metrics():
 
 app.mount("/api/v1",api)
 
+class SignupRequest(BaseModel):
+    name: str = Field(..., max_length=160)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    consent: str = ""
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class VerifyMFARequest(BaseModel):
+    email: EmailStr
+    code: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+class ToggleMFARequest(BaseModel):
+    password: str
+    enabled: bool = False
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    password: str = Field(..., min_length=8)
+
+class UpdateConversationRequest(BaseModel):
+    title: str = Field(..., max_length=200)
+    pinned: bool = False
+
+class ReviewRegistrationRequest(BaseModel):
+    decision: str
+    reason: str = ""
+
+class RejectDocumentRequest(BaseModel):
+    reason: str = ""
+
+class UpdateProfileRequest(BaseModel):
+    name: str = Field(..., max_length=160)
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+class ChatAttachmentRequest(BaseModel):
+    question: str = ""
+    language: str = "en-IN"
+    conversation_id: int | None = None
+
 @api.post("/auth/signup")
-async def signup(name:str=Form(...),email:EmailStr=Form(...),password:str=Form(...),consent:str=Form(""),db:Session=Depends(get_db)):
-    if consent!="on": raise HTTPException(400,"Consent required")
-    if db.scalar(select(User).where(User.email==email)): raise HTTPException(409,"Email already registered")
-    hashed=hash_password(password)
-    u=User(name=name[:160],email=email.lower(),password_hash=hashed,role="user",mfa_enabled=False)
+async def signup(req: SignupRequest, db: Session = Depends(get_db)):
+    if req.consent != "on":
+        raise HTTPException(400, "Consent required")
+    if db.scalar(select(User).where(User.email == req.email)):
+        raise HTTPException(409, "Email already registered")
+    hashed = hash_password(req.password)
+    u = User(name=req.name[:160], email=req.email.lower(), password_hash=hashed, role="user", mfa_enabled=False)
     db.add(u); db.commit(); db.refresh(u)
-    code=secrets.token_urlsafe(16)[:6].upper()
+    code = secrets.token_urlsafe(16)[:6].upper()
     from .security import verify_token
-    token=verify_token({"sub":str(u.id),"email":u.email,"role":u.role,"college_id":u.college_id},sign=True)
+    token = verify_token({"sub": str(u.id), "email": u.email, "role": u.role, "college_id": u.college_id}, sign=True)
     from .models import EmailVerification
-    ev=EmailVerification(user_id=u.id,code=code,expires_at=datetime.now(timezone.utc)+timedelta(hours=24))
+    ev = EmailVerification(user_id=u.id, code=code, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
     db.add(ev); db.commit()
-    return {"user_id":u.id,"email":u.email,"development_code":code,"message":"Verification code sent (development mode)"}
+    return {"user_id": u.id, "email": u.email, "development_code": code, "message": "Verification code sent (development mode)"}
 
 @api.post("/auth/verify-email")
-async def verify_email(email:EmailStr=Form(...),code:str=Form(...),db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.email==email.lower()))
-    if not u: raise HTTPException(404,"User not found")
-    ev=db.scalar(select(EmailVerification).where(EmailVerification.user_id==u.id,EmailVerification.code==code,EmailVerification.expires_at>datetime.now(timezone.utc)))
-    if not ev: raise HTTPException(400,"Invalid or expired code")
-    db.delete(ev); u.email_verified=True; db.commit()
-    return {"message":"Email verified"}
+async def verify_email(req: VerifyEmailRequest, db: Session = Depends(get_db)):
+    u = db.scalar(select(User).where(User.email == req.email.lower()))
+    if not u:
+        raise HTTPException(404, "User not found")
+    ev = db.scalar(select(EmailVerification).where(EmailVerification.user_id == u.id, EmailVerification.code == req.code, EmailVerification.expires_at > datetime.now(timezone.utc)))
+    if not ev:
+        raise HTTPException(400, "Invalid or expired code")
+    db.delete(ev); u.email_verified = True; db.commit()
+    return {"message": "Email verified"}
 
 def auth_user_query(email: str):
     clean_email = email.strip().lower()
@@ -117,20 +177,9 @@ def set_portal_auth_cookies(response:JSONResponse,access_token:str,refresh_token
         response.delete_cookie("refresh_token")
 
 @api.post("/auth/login")
-async def login(request: Request, email: str = Form(None), password: str = Form(None), db: Session = Depends(get_db)):
-    if not email or not password:
-        try:
-            body = await request.json()
-            email = email or body.get("email")
-            password = password or body.get("password")
-        except Exception:
-            pass
-
-    if not email or not password:
-        raise HTTPException(422, "Email and password are required")
-
-    email_clean = str(email).strip().lower()
-    pwd_str = str(password)
+async def login(req: LoginRequest, db: Session = Depends(get_db)):
+    email_clean = str(req.email).strip().lower()
+    pwd_str = str(req.password)
     pwd_clean = pwd_str.strip()
 
     u = db.scalar(auth_user_query(email_clean))
@@ -167,11 +216,11 @@ async def login(request: Request, email: str = Form(None), password: str = Form(
     return response
 
 @api.post("/auth/verify-mfa")
-async def verify_mfa(email: EmailStr = Form(...), code: str = Form(...), db: Session = Depends(get_db)):
-    u = db.scalar(auth_user_query(email.strip().lower()))
+async def verify_mfa(req: VerifyMFARequest, db: Session = Depends(get_db)):
+    u = db.scalar(auth_user_query(req.email.strip().lower()))
     if not u:
         raise HTTPException(404, "User not found")
-    ev = db.scalar(select(EmailVerification).where(EmailVerification.user_id == u.id, EmailVerification.code == code, EmailVerification.expires_at > datetime.now(timezone.utc)))
+    ev = db.scalar(select(EmailVerification).where(EmailVerification.user_id == u.id, EmailVerification.code == req.code, EmailVerification.expires_at > datetime.now(timezone.utc)))
     if not ev:
         raise HTTPException(400, "Invalid or expired code")
     db.delete(ev)
@@ -209,39 +258,43 @@ def get_current_user_endpoint(u:User=Depends(current_user),db:Session=Depends(ge
     return {"id":u.id,"name":u.name,"email":u.email,"role":u.role,"college_id":u.college_id,"mfa_enabled":u.mfa_enabled,"force_password_change":u.force_password_change}
 
 @api.post("/auth/change-password")
-async def change_password(current_password:str=Form(...),new_password:str=Form(...),u:User=Depends(current_user),db:Session=Depends(get_db)):
-    if not verify_password(current_password,u.password_hash): raise HTTPException(401,"Current password incorrect")
-    if len(new_password)<8: raise HTTPException(400,"Password must be at least 8 characters")
-    u.password_hash=hash_password(new_password); u.force_password_change=False; db.commit()
-    return {"message":"Password changed"}
+async def change_password(req: ChangePasswordRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not verify_password(req.current_password, u.password_hash):
+        raise HTTPException(401, "Current password incorrect")
+    u.password_hash = hash_password(req.new_password); u.force_password_change = False; db.commit()
+    return {"message": "Password changed"}
 
 @api.patch("/auth/mfa")
-async def toggle_mfa(password:str=Form(...),enabled:bool=Form(False),u:User=Depends(current_user),db:Session=Depends(get_db)):
-    if not verify_password(password,u.password_hash): raise HTTPException(401,"Password incorrect")
-    u.mfa_enabled=enabled; db.commit()
-    return {"message":"MFA updated","enabled":enabled}
+async def toggle_mfa(req: ToggleMFARequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not verify_password(req.password, u.password_hash):
+        raise HTTPException(401, "Password incorrect")
+    u.mfa_enabled = req.enabled; db.commit()
+    return {"message": "MFA updated", "enabled": req.enabled}
 
 @api.post("/auth/forgot-password")
-async def forgot_password(email:EmailStr=Form(...),db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.email==email.lower()))
-    if not u: return {"message":"If the account exists, a reset code has been sent"}
-    code=secrets.token_urlsafe(16)[:6].upper()
+async def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    u = db.scalar(select(User).where(User.email == req.email.lower()))
+    if not u:
+        return {"message": "If the account exists, a reset code has been sent"}
+    code = secrets.token_urlsafe(16)[:6].upper()
     from .models import EmailVerification
-    existing=db.scalar(select(EmailVerification).where(EmailVerification.user_id==u.id,EmailVerification.expires_at>datetime.now(timezone.utc)))
-    if existing: db.delete(existing)
-    ev=EmailVerification(user_id=u.id,code=code,expires_at=datetime.now(timezone.utc)+timedelta(hours=1))
+    existing = db.scalar(select(EmailVerification).where(EmailVerification.user_id == u.id, EmailVerification.expires_at > datetime.now(timezone.utc)))
+    if existing:
+        db.delete(existing)
+    ev = EmailVerification(user_id=u.id, code=code, expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
     db.add(ev); db.commit()
-    return {"message":"If the account exists, a reset code has been sent","development_code":code}
+    return {"message": "If the account exists, a reset code has been sent", "development_code": code}
 
 @api.post("/auth/reset-password")
-async def reset_password(email:EmailStr=Form(...),code:str=Form(...),password:str=Form(...),db:Session=Depends(get_db)):
-    u=db.scalar(select(User).where(User.email==email.lower()))
-    if not u: raise HTTPException(404,"User not found")
-    ev=db.scalar(select(EmailVerification).where(EmailVerification.user_id==u.id,EmailVerification.code==code,EmailVerification.expires_at>datetime.now(timezone.utc)))
-    if not ev: raise HTTPException(400,"Invalid or expired code")
-    if len(password)<8: raise HTTPException(400,"Password must be at least 8 characters")
-    db.delete(ev); u.password_hash=hash_password(password); u.force_password_change=False; db.commit()
-    return {"message":"Password reset successful"}
+async def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
+    u = db.scalar(select(User).where(User.email == req.email.lower()))
+    if not u:
+        raise HTTPException(404, "User not found")
+    ev = db.scalar(select(EmailVerification).where(EmailVerification.user_id == u.id, EmailVerification.code == req.code, EmailVerification.expires_at > datetime.now(timezone.utc)))
+    if not ev:
+        raise HTTPException(400, "Invalid or expired code")
+    db.delete(ev); u.password_hash = hash_password(req.password); u.force_password_change = False; db.commit()
+    return {"message": "Password reset successful"}
 
 @api.get("/auth/sessions")
 def list_sessions(u:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -282,11 +335,12 @@ def delete_conversation(conversation_id:int,u:User=Depends(current_user),db:Sess
     return {"deleted":True}
 
 @api.patch("/conversations/{conversation_id}")
-def update_conversation(conversation_id:int,title:str=Form(...),pinned:bool=Form(False),u:User=Depends(current_user),db:Session=Depends(get_db)):
-    conv=db.get(Conversation,conversation_id)
-    if not conv or conv.user_id!=u.id: raise HTTPException(404,"Conversation not found")
-    conv.title=title[:200]; conv.pinned=pinned; conv.updated_at=datetime.now(timezone.utc); db.commit()
-    return {"id":conv.id,"title":conv.title,"pinned":conv.pinned}
+def update_conversation(conversation_id: int, req: UpdateConversationRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    conv = db.get(Conversation, conversation_id)
+    if not conv or conv.user_id != u.id:
+        raise HTTPException(404, "Conversation not found")
+    conv.title = req.title[:200]; conv.pinned = req.pinned; conv.updated_at = datetime.now(timezone.utc); db.commit()
+    return {"id": conv.id, "title": conv.title, "pinned": conv.pinned}
 
 @api.post("/chat")
 async def chat_endpoint(request:Request, body:dict, db:Session=Depends(get_db), u:User=Depends(current_user)):
@@ -400,21 +454,23 @@ def registration_checks(registration_id:int,db:Session=Depends(get_db)):
     return {"email_domain_matches":reg.contact_email.endswith(reg.website.replace("https://","").replace("http://","").split("/")[0].split(".")[-2:]),"website_reachable":domain_ok,"verification_file_matches":True,"approval_allowed":domain_ok}
 
 @api.post("/registrations/{registration_id}/review")
-def review_registration(registration_id:int,decision:str=Form(...),reason:str=Form(""),db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
+def review_registration(registration_id: int, req: ReviewRegistrationRequest, db: Session = Depends(get_db), u: User = Depends(require("super_admin"))):
     from .models import Registration
-    reg=db.get(Registration,registration_id)
-    if not reg: raise HTTPException(404,"Registration not found")
-    if decision=="approve":
-        if reg.status!="pending": raise HTTPException(400,"Registration not pending")
-        college=College(name=reg.name,code=reg.code or reg.name[:8].upper(),status="approved",data_version=1,feature_flags={"voice":True,"widget":True,"semantic_search":True})
+    reg = db.get(Registration, registration_id)
+    if not reg:
+        raise HTTPException(404, "Registration not found")
+    if req.decision == "approve":
+        if reg.status != "pending":
+            raise HTTPException(400, "Registration not pending")
+        college = College(name=reg.name, code=reg.code or reg.name[:8].upper(), status="approved", data_version=1, feature_flags={"voice": True, "widget": True, "semantic_search": True})
         db.add(college); db.flush()
-        admin_password=secrets.token_urlsafe(12)
-        admin=User(name=reg.contact_name,email=reg.contact_email,password_hash=hash_password(admin_password),role="college_admin",college_id=college.id,email_verified=True)
-        db.add(admin); reg.status="approved"; reg.approved_by=u.id; reg.approved_at=datetime.now(timezone.utc); db.commit()
-        return {"college_id":college.id,"admin_email":admin.email,"temporary_password":admin_password}
+        admin_password = secrets.token_urlsafe(12)
+        admin = User(name=reg.contact_name, email=reg.contact_email, password_hash=hash_password(admin_password), role="college_admin", college_id=college.id, email_verified=True)
+        db.add(admin); reg.status = "approved"; reg.approved_by = u.id; reg.approved_at = datetime.now(timezone.utc); db.commit()
+        return {"college_id": college.id, "admin_email": admin.email, "temporary_password": admin_password}
     else:
-        reg.status="rejected"; reg.reject_reason=reason[:500]; db.commit()
-        return {"status":"rejected"}
+        reg.status = "rejected"; reg.reject_reason = req.reason[:500]; db.commit()
+        return {"status": "rejected"}
 
 @api.get("/super/overview")
 def super_overview(db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
@@ -590,12 +646,13 @@ def approve_document(document_id:int,db:Session=Depends(get_db),u:User=Depends(r
     return {"status":"pending","message":"Approval queued. College data will update after processing completes."}
 
 @api.post("/api/v1/super-admin/documents/{document_id}/reject")
-def reject_document(document_id:int,reason:str=Form(""),db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
-    doc=db.get(CollegeDocument,document_id)
-    if not doc or doc.status!="pending": raise HTTPException(404,"Document not found or not pending")
-    doc.status="rejected"; doc.reject_reason=reason[:500]; doc.reviewed_by=u.id; doc.reviewed_at=datetime.now(timezone.utc)
+def reject_document(document_id: int, req: RejectDocumentRequest, db: Session = Depends(get_db), u: User = Depends(require("super_admin"))):
+    doc = db.get(CollegeDocument, document_id)
+    if not doc or doc.status != "pending":
+        raise HTTPException(404, "Document not found or not pending")
+    doc.status = "rejected"; doc.reject_reason = req.reason[:500]; doc.reviewed_by = u.id; doc.reviewed_at = datetime.now(timezone.utc)
     db.commit()
-    return {"status":"rejected","reason":reason}
+    return {"status": "rejected", "reason": req.reason}
 
 @api.get("/api/v1/admin/documents")
 def list_college_documents(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
@@ -666,50 +723,59 @@ def delete_media(media_id:int,db:Session=Depends(get_db),u:User=Depends(require(
     college=db.get(College,u.college_id); college.data_version+=1; db.delete(asset); db.commit(); return {"deleted":True}
 
 @api.post("/api/v1/chat/attachment")
-async def chat_attachment(file:UploadFile=File(...),question:str=Form(""),language:str=Form("en-IN"),conversation_id:int|None=Form(None),db:Session=Depends(get_db),u:User=Depends(current_user)):
-    if len(question)>2000: raise HTTPException(400,"Question is too long")
-    conv=db.get(Conversation,conversation_id) if conversation_id else None
-    if conversation_id and (not conv or conv.user_id!=u.id): raise HTTPException(404,"Conversation not found")
-    data=await file.read(10*1024*1024+1)
-    if len(data)>10*1024*1024: raise HTTPException(413,"Maximum attachment size is 10 MB")
+async def chat_attachment(file: UploadFile = File(...), req: ChatAttachmentRequest = Form(None), db: Session = Depends(get_db), u: User = Depends(current_user)):
+    question = req.question if req else ""
+    language = req.language if req else "en-IN"
+    conversation_id = req.conversation_id if req else None
+
+    if len(question) > 2000:
+        raise HTTPException(400, "Question is too long")
+    conv = db.get(Conversation, conversation_id) if conversation_id else None
+    if conversation_id and (not conv or conv.user_id != u.id):
+        raise HTTPException(404, "Conversation not found")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Maximum attachment size is 10 MB")
     scan_upload(data)
-    name=file.filename or "attachment"
-    suffix=name.lower().rsplit(".",1)[-1]
-    if suffix in {"png","jpg","jpeg","webp","gif"}:
+    name = file.filename or "attachment"
+    suffix = name.lower().rsplit(".", 1)[-1]
+    if suffix in {"png", "jpg", "jpeg", "webp", "gif"}:
         from PIL import Image
         try:
-            img=Image.open(io.BytesIO(data))
-            if img.mode in {"RGBA","P"}: img=img.convert("RGB")
-            out=io.BytesIO(); img.save(out,format="WEBP",quality=85); data=out.getvalue()
-        except: raise HTTPException(415,"Invalid image")
+            img = Image.open(io.BytesIO(data))
+            if img.mode in {"RGBA", "P"}:
+                img = img.convert("RGB")
+            out = io.BytesIO(); img.save(out, format="WEBP", quality=85); data = out.getvalue()
+        except:
+            raise HTTPException(415, "Invalid image")
     else:
-        raise HTTPException(415,"Unsupported file type")
+        raise HTTPException(415, "Unsupported file type")
     if not conv:
-        conv=Conversation(user_id=u.id,college_id=u.college_id,title=question[:100] or "Attachment chat")
+        conv = Conversation(user_id=u.id, college_id=u.college_id, title=question[:100] or "Attachment chat")
         db.add(conv); db.flush()
-    user_msg=Message(conversation_id=conv.id,role="user",content=question or f"Attached {name}")
+    user_msg = Message(conversation_id=conv.id, role="user", content=question or f"Attached {name}")
     db.add(user_msg); db.flush()
-    asset_id=uuid.uuid4().hex; object_key=f"colleges/{u.college_id}/media/{asset_id}.webp"
+    asset_id = uuid.uuid4().hex; object_key = f"colleges/{u.college_id}/media/{asset_id}.webp"
     from .storage import put_image
     try:
-        put_image(object_key,data)
+        put_image(object_key, data)
     except Exception as exc:
-        raise HTTPException(503,"Media storage unavailable") from exc
-    asset=MediaAsset(college_id=u.college_id,source_url="chat://attachment",object_key=object_key,alt_text=name[:500],content_hash=hashlib.sha256(data).hexdigest(),size_bytes=len(data))
+        raise HTTPException(503, "Media storage unavailable") from exc
+    asset = MediaAsset(college_id=u.college_id, source_url="chat://attachment", object_key=object_key, alt_text=name[:500], content_hash=hashlib.sha256(data).hexdigest(), size_bytes=len(data))
     db.add(asset); db.commit()
-    answer=f"I've received your attachment {name}. What would you like to know about it?"
-    assistant_msg=Message(conversation_id=conv.id,role="assistant",content=answer)
-    db.add(assistant_msg); conv.updated_at=datetime.now(timezone.utc); db.commit()
-    return {"message_id":assistant_msg.id,"content":answer,"conversation_id":conv.id}
+    answer = f"I've received your attachment {name}. What would you like to know about it?"
+    assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
+    db.add(assistant_msg); conv.updated_at = datetime.now(timezone.utc); db.commit()
+    return {"message_id": assistant_msg.id, "content": answer, "conversation_id": conv.id}
 
 @api.get("/api/v1/account/profile")
 def get_account_profile(u:User=Depends(current_user)):
     return {"name":u.name,"email":u.email}
 
 @api.patch("/api/v1/account/profile")
-def update_account_profile(name:str=Form(...),u:User=Depends(current_user),db:Session=Depends(get_db)):
-    u.name=name[:160]; db.commit()
-    return {"name":u.name}
+def update_account_profile(req: UpdateProfileRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    u.name = req.name[:160]; db.commit()
+    return {"name": u.name}
 
 @api.get("/api/v1/account/export")
 def export_account_data(u:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -726,14 +792,16 @@ def delete_account_data(u:User=Depends(current_user),db:Session=Depends(get_db))
     return {"deleted":True}
 
 @api.delete("/api/v1/account/delete")
-def delete_account(password:str=Form(...),u:User=Depends(current_user),db:Session=Depends(get_db)):
-    if not verify_password(password,u.password_hash): raise HTTPException(401,"Invalid password")
-    conv_ids=[c.id for c in db.scalars(select(Conversation).where(Conversation.user_id==u.id))]
-    for m in list(db.scalars(select(Message).where(Message.conversation_id.in_(conv_ids)))): db.query(Feedback).filter(Feedback.message_id==m.id).delete(synchronize_session=False)
+def delete_account(req: DeleteAccountRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not verify_password(req.password, u.password_hash):
+        raise HTTPException(401, "Invalid password")
+    conv_ids = [c.id for c in db.scalars(select(Conversation).where(Conversation.user_id == u.id))]
+    for m in list(db.scalars(select(Message).where(Message.conversation_id.in_(conv_ids)))):
+        db.query(Feedback).filter(Feedback.message_id == m.id).delete(synchronize_session=False)
     db.query(Message).filter(Message.conversation_id.in_(conv_ids)).delete(synchronize_session=False)
     db.query(Conversation).filter(Conversation.id.in_(conv_ids)).delete(synchronize_session=False)
     db.delete(u); db.commit()
-    return {"deleted":True}
+    return {"deleted": True}
 
 @api.post("/api/v1/widget/chat")
 async def widget_chat(request:Request, body:dict, db:Session=Depends(get_db)):
