@@ -1,0 +1,196 @@
+@import "tailwindcss";
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#000000;color:#ececec;font-family:Inter,system-ui,sans-serif}
+
+/* ── Shell layout ── */
+.shell{height:100vh;display:flex}
+.sidebar{width:264px;background:#0b0b0b;border-right:1px solid #1e1e1e;padding:16px;display:flex;flex-direction:column;gap:4px}
+
+/* ── Brand block in sidebar ── */
+.brand{display:flex;align-items:center;gap:10px;padding:8px 4px 18px;text-decoration:none}
+.brand-logo{width:36px;height:36px;object-fit:contain;border-radius:8px;flex-shrink:0}
+.brand-text{display:flex;flex-direction:column;line-height:1.15}
+.brand-name{font-weight:700;font-size:14px;color:#ffffff;letter-spacing:-0.01em}
+.brand-sub{font-size:11px;color:#666;font-weight:400}
+
+/* ── Buttons ── */
+.btn{border:1px solid #2a2a2a;border-radius:10px;background:#141414;color:#eee;padding:10px 12px;cursor:pointer;text-align:left;font-size:13px;transition:background 0.1s}
+.btn:hover{background:#1e1e1e}
+
+/* ── Chat history ── */
+.history{overflow:auto;flex:1;margin-top:8px}
+.history button{display:block;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:0;background:none;color:#bbb;padding:10px 12px;text-align:left;border-radius:8px;cursor:pointer;font-size:14px;transition:background 0.15s,color 0.15s}
+.history button:hover,.history .selected{background:#1f1f1f;color:#fff}
+
+/* ── Main content ── */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:60px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;justify-content:space-between;padding:0 24px;color:#bbb;font-size:13px}
+.college-chip{border:1px solid #2a2a2a;border-radius:999px;padding:7px 13px;color:#eee;background:#111;font-size:13px;cursor:pointer;transition:background 0.1s}
+.college-chip:hover{background:#1a1a1a}
+
+/* ── Messages ── */
+.messages{flex:1;overflow:auto;padding:36px 16px 24px;position:relative}
+.thread{max-width:780px;margin:auto}
+.scroll-bottom{position:sticky;bottom:12px;display:block;margin:0 auto 0;border:1px solid #3a3a3a;border-radius:999px;background:#1a1a1a;color:#eee;padding:9px 16px;cursor:pointer;box-shadow:0 4px 18px #0009;font-size:13px}
+
+/* ── Welcome ── */
+.welcome{text-align:center;margin:13vh auto 30px;max-width:580px}
+.welcome-logo{display:block;width:80px;height:80px;object-fit:contain;border-radius:16px;margin:0 auto 20px}
+.welcome h1{font-size:26px;font-weight:700;color:#fff;margin:0 0 10px;letter-spacing:-0.02em}
+.welcome .tagline{color:#666;font-size:15px;margin:0 0 6px;line-height:1.6}
+
+/* ── Text utilities ── */
+.muted{color:#888;line-height:1.6}
+
+/* ── Chat rows ── */
+.row{display:flex;margin:20px 0;gap:12px;white-space:pre-wrap;line-height:1.65}
+.row.user{justify-content:flex-end}
+.bubble{max-width:86%;border-radius:18px;padding:12px 16px;background:#191919;border:1px solid #242424}
+.user .bubble{background:#242424}
+.badge{display:inline-block;font-size:11px;color:#aaa;margin-top:8px}
+.source{display:block;color:#858585;font-size:12px;margin-top:6px;overflow-wrap:anywhere}
+
+/* ── Composer ── */
+.composer{padding:12px 20px 20px}
+.inputbox{max-width:780px;margin:auto;border:1px solid #2a2a2a;border-radius:20px;background:#111;padding:10px;display:flex;align-items:end;gap:8px}
+.inputbox textarea{flex:1;background:transparent;border:0;outline:0;color:#fff;resize:none;max-height:160px;padding:9px;font:inherit;font-size:14px}
+.send{background:#eeeeee;color:#111;border:0;border-radius:50%;height:38px;width:38px;font-size:19px;cursor:pointer;flex-shrink:0;transition:background 0.1s}
+.send:hover{background:#fff}
+.voice-button{position:relative;display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;padding:0;border:1px solid #343434;border-radius:50%;background:#242424;color:#f5f5f5;cursor:pointer;transition:background .15s,border-color .15s,transform .15s}
+.voice-button:hover{background:#303030;border-color:#484848;transform:translateY(-1px)}
+.voice-button svg{width:20px;height:20px}
+.voice-button.recording{background:#c9363e;border-color:#e05259;color:#fff;box-shadow:0 0 0 4px rgba(220,53,69,.16)}
+.voice-button.recording::after{content:"";position:absolute;inset:-5px;border:1px solid rgba(240,83,92,.48);border-radius:50%;animation:voice-ring 1.4s ease-out infinite;pointer-events:none}
+@keyframes voice-ring{0%{transform:scale(.9);opacity:.9}100%{transform:scale(1.45);opacity:0}}
+.icon-button{display:grid;place-items:center;flex:0 0 38px;width:38px;height:38px;padding:0}
+.icon-button svg{width:19px;height:19px}
+.icon-button.active{background:#333;border-color:#555;color:#fff}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.fineprint{text-align:center;color:#444;font-size:11px;margin-top:10px}
+.coding-badge{display:inline-block;background:#2a2a2a;color:#7aa2f7;padding:4px 8px;border-radius:4px;font-size:11px;margin-bottom:8px}
+
+/* ── Auth modal (User Side) ── */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:grid;place-items:center;padding:18px}
+.card{background:#111111;border:1px solid #2a2a2a;border-radius:16px;padding:28px 26px;width:min(420px,100%)}
+.card-header{text-align:center;margin-bottom:22px}
+.card-logo{display:block;width:52px;height:52px;object-fit:contain;border-radius:10px;margin:0 auto 12px}
+.auth-form{display:flex;flex-direction:column;gap:8px}
+.auth-form h2,.auth-form p{margin-top:0}
+.auth-form .primary{margin-top:4px}
+.auth-consent{display:flex;align-items:flex-start;gap:8px;margin:8px 0;cursor:pointer}
+.auth-consent input[type="checkbox"]{width:16px;height:16px;flex:0 0 16px;margin:3px 0 0;accent-color:#eee}
+.auth-link{display:block;width:100%;padding:6px 0;border:0;background:transparent;color:#aaa;font:inherit;font-size:13px;text-align:center;cursor:pointer}
+.auth-link:hover{color:#fff;text-decoration:underline}
+.card h2{margin:0 0 4px;font-size:19px;font-weight:700;color:#fff}
+.card .subtitle{color:#a0a0a0;font-size:13px;margin:0}
+
+/* ── Inputs ── */
+input,select{background:#1a1a1a;border:1px solid #2a2a2a;color:#eee;border-radius:9px;padding:11px 13px;width:100%;margin:7px 0;font-size:14px;outline:none;transition:border-color 0.15s}
+input:focus,select:focus{border-color:#444}
+textarea{background:#1a1a1a;border:1px solid #2a2a2a;color:#eee;border-radius:9px;padding:11px 13px;width:100%;margin:7px 0;resize:vertical;font:inherit;font-size:14px;outline:none;transition:border-color 0.15s}
+textarea:focus{border-color:#444}
+
+/* ── Buttons ── */
+.primary{background:#eeeeee;color:#111;border:0;border-radius:9px;padding:11px 16px;cursor:pointer;font-weight:600;font-size:14px;transition:background 0.1s}
+.primary:hover{background:#fff}
+.primary:disabled{background:#2a2a2a;color:#666;cursor:not-allowed}
+.error{color:#fca5a5;font-size:13px}
+.success{color:#86efac;font-size:13px}
+
+/* ── Admin panels ── */
+.admin{padding:32px;overflow:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.stat,.panel{background:#111111;border:1px solid #222;border-radius:14px;padding:18px}
+.stat strong{display:block;font-size:24px;margin-top:8px;color:#fff}
+.panel{margin-top:16px}
+.panel h2,.panel h3{margin-top:0;color:#fff}
+
+/* ── Tables in bubbles ── */
+.bubble table{border-collapse:collapse;width:100%;display:block;overflow:auto;margin:12px 0}
+.bubble th,.bubble td{border:1px solid #3a3a3a;padding:8px 10px;text-align:left;white-space:nowrap}
+.bubble th{background:#1e1e1e}
+.bubble a{color:#b5c8ff}
+
+/* ── Misc ── */
+.history-row{display:flex;align-items:center;gap:4px;margin:2px 0;position:relative}
+.history-row>button:first-child{flex:1;text-align:left;padding-right:30px}
+.history-actions{position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;gap:2px;opacity:0;transition:opacity 0.15s}
+.history-row:hover .history-actions{opacity:1}
+.mini{border:0;background:transparent;color:#666;cursor:pointer;padding:4px 6px;font-size:12px;border-radius:4px;transition:color 0.15s,background 0.15s;line-height:1}
+.mini:hover{color:#fff;background:#2a2a2a}
+.conversation-menu{position:absolute;right:32px;top:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:4px 0;min-width:140px;box-shadow:0 4px 12px #000;z-index:100}
+.conversation-menu button{display:block;width:100%;background:none;border:none;color:#bbb;padding:8px 12px;text-align:left;cursor:pointer;font-size:13px;transition:background 0.15s}
+.conversation-menu button:hover{background:#252525;color:#fff}
+.history-rename{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.history-rename input{min-width:0;margin:0;padding:7px 8px}
+.delete-confirm{display:flex;align-items:center;gap:6px;padding:8px;right:8px;top:calc(100% + 2px);color:#bbb;font-size:12px}
+.share-link{padding:8px;border-top:1px solid #222}
+.share-link label{display:block;font-size:11px}
+.share-link input{font-size:11px;padding:7px;margin:4px 0}
+.message-toolbar{display:flex;gap:4px;margin-top:8px;opacity:0;transition:opacity 0.15s}
+.bubble:hover .message-toolbar{opacity:1}
+.actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.actions button{border:0;background:transparent;color:#666;cursor:pointer;font-size:11px;padding:4px;border-radius:5px;transition:color 0.1s}
+.actions button:hover,.link:hover{color:#fff}
+.suggestions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.sidebar>a{color:#777;text-decoration:none;padding:10px 12px;border-radius:8px;font-size:13px;transition:background 0.1s,color 0.1s;display:block}
+.sidebar>a:hover{background:#1a1a1a;color:#fff}
+.sidebar button.active{background:#1e1e1e;color:#fff;border-color:#3a3a3a}
+details{margin-top:12px}
+summary{list-style:none}
+.link{cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* ── Maintenance banner ── */
+.maintenance-banner{padding:9px 16px;text-align:center;background:#45380d;color:#f4d77a;border-bottom:1px solid #6a5716;font-size:13px}
+
+/* ── Chat history groups ── */
+.history-group{font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px 4px;color:#555;font-weight:600}
+
+/* ── Language picker ── */
+.language-picker-wrapper{position:relative;display:inline-block}
+.language-picker{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;color:#eee;padding:6px 12px;font-size:13px;cursor:pointer;transition:background 0.15s}
+.language-picker:hover{background:#252525}
+.language-dropdown{position:absolute;top:100%;right:0;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:4px 0;min-width:120px;box-shadow:0 4px 12px #000;z-index:100}
+.language-dropdown button{display:block;width:100%;background:none;border:none;color:#bbb;padding:8px 12px;text-align:left;cursor:pointer;font-size:13px;transition:background 0.15s}
+.language-dropdown button:hover{background:#252525;color:#fff}
+
+/* ── User profile ── */
+.user-profile{display:flex;align-items:center;gap:10px;padding:10px;margin-top:auto;border-top:1px solid #1e1e1e;cursor:pointer;transition:background 0.15s}
+.user-profile:hover{background:#1a1a1a}
+.account-menu-anchor{position:relative;margin-top:auto}
+.account-menu-anchor .user-profile{margin-top:0}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:#2a2a2a;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;color:#fff;flex-shrink:0}
+.user-info{flex:1;min-width:0;overflow:hidden}
+.user-name{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-email{font-size:11px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.profile-menu-btn{border:none;background:transparent;color:#666;cursor:pointer;padding:4px;font-size:16px;border-radius:4px;transition:color 0.15s}
+.profile-menu-btn:hover{color:#fff}
+.account-menu{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);z-index:200;background:#202020;border:1px solid #373737;border-radius:12px;padding:6px;box-shadow:0 12px 32px #0009}
+.account-menu-identity{padding:10px 10px 12px;border-bottom:1px solid #383838;margin-bottom:5px}
+.account-menu-identity .user-name{font-size:13px}
+.account-menu-identity .user-email{font-size:12px;margin-top:3px}
+.account-menu button{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:7px;background:transparent;color:#eee;padding:10px;text-align:left;font:inherit;font-size:13px;cursor:pointer}
+.account-menu button:hover{background:#303030}
+.account-menu button:last-child{color:#ff8b8b}
+.account-menu-icon{width:18px;text-align:center;color:#aaa;font-size:15px}
+.account-menu-divider{height:1px;background:#383838;margin:5px 4px}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .sidebar{width:58px;padding:10px}
+  .brand-text,.brand-name,.brand-sub{display:none}
+  .brand-logo{width:30px;height:30px}
+  .sidebar .label,.history{display:none}
+  .top{padding:0 12px}
+  .messages{padding-top:16px}
+  .welcome h1{font-size:21px}
+  .welcome-logo{width:48px;height:48px}
+  .admin{padding:16px}
+  .brand{padding:6px 2px 14px;justify-content:center}
+}
+@media(max-width:480px){
+  .card{padding:22px 18px}
+  .welcome{margin:8vh auto 24px}
+}

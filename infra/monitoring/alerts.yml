@@ -1,0 +1,51 @@
+groups:
+  - name: college-faq-api
+    rules:
+      - alert: CollegeFaqApiUnavailable
+        expr: up{job="college-faq-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: College FAQ API metrics endpoint is unavailable
+          description: Prometheus has been unable to scrape the API for more than two minutes.
+      - alert: CollegeFaqHighServerErrorRate
+        expr: sum(rate(chatbot_api_requests_total{job="college-faq-api",status=~"5.."}[5m])) / clamp_min(sum(rate(chatbot_api_requests_total{job="college-faq-api"}[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: College FAQ API server error rate is above 5 percent
+          description: More than five percent of API requests returned a server error over the last five minutes.
+      - alert: CollegeFaqChatP95LatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(chatbot_api_request_seconds_bucket{job="college-faq-api",route="/api/v1/chat"}[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: College FAQ chat P95 latency is above five seconds
+          description: Chat API P95 latency exceeded the configured five-second target for five minutes.
+      - alert: CollegeFaqRedisUnavailable
+        expr: chatbot_redis_available{job="college-faq-api"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: College FAQ Redis is unavailable
+          description: The API could not reach Redis during metrics probes for two minutes.
+      - alert: CollegeFaqCrawlFailures
+        expr: chatbot_crawl_failures_last_hour{job="college-faq-api"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: One or more college website crawls failed
+          description: Review crawl history and the saved frontier in the college admin dashboard.
+      - alert: CollegeFaqAiProviderFailures
+        expr: increase(chatbot_ai_provider_failures_total{job="college-faq-api"}[10m]) >= 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: An AI provider has failed repeatedly
+          description: Check provider availability, server-side credentials, and configured fallback order.

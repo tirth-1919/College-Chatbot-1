@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: chatbot_postgres
+    environment:
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD: chatbot_password
+      POSTGRES_DB: chatbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chatbot_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  user-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatbot_user_api
+    environment:
+      - APP_SIDE=user
+      - DATABASE_URL=postgresql://chatbot:chatbot_password@postgres:5432/chatbot
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.user_main:app --host 0.0.0.0 --port 8000"
+
+  admin-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatbot_admin_api
+    environment:
+      - APP_SIDE=admin
+      - DATABASE_URL=postgresql://chatbot:chatbot_password@postgres:5432/chatbot
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.admin_main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: chatbot_worker
+    environment:
+      - DATABASE_URL=postgresql://chatbot:chatbot_password@postgres:5432/chatbot
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.worker worker --loglevel=info
+
+volumes:
+  postgres_data:
