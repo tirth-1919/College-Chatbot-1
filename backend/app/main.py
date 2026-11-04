@@ -531,7 +531,7 @@ async def admin_upload(file:UploadFile=File(...),u:User=Depends(require("college
     page=Page(college_id=u.college_id,job_id=None,url="uploaded://"+name[:900],title=name[:500],raw_text=text[:2000000],content_hash=hashlib.sha256(data).hexdigest(),active=True); db.add(page); db.flush()
     fact=Fact(college_id=u.college_id,category="Uploaded Document",title=name[:300],value=text[:50000],source_page_id=page.id,confidence=.9,extra={"source_type":"uploaded document","filename":name}); db.add(fact); db.get(College,u.college_id).data_version+=1; db.commit(); return {"fact_id":fact.id,"page_id":page.id,"characters":len(text)}
 
-@api.post("/api/v1/admin/document-upload")
+@api.post("/admin/document-upload")
 async def upload_document_for_approval(file:UploadFile=File(...),db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
     try:
         logger.info("document upload received filename=%r college_id=%s",file.filename,u.college_id)
@@ -590,7 +590,7 @@ async def upload_document_for_approval(file:UploadFile=File(...),db:Session=Depe
         logger.exception("document upload failed filename=%r college_id=%s",file.filename,u.college_id)
         raise HTTPException(500,f"Document upload failed: {str(e)}") from e
 
-@api.get("/api/v1/super-admin/pending-documents")
+@api.get("/super-admin/pending-documents")
 def list_pending_documents(db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     docs=list(db.scalars(select(CollegeDocument).where(CollegeDocument.status=="pending").order_by(CollegeDocument.submitted_at.desc()).limit(100)))
     result=[]
@@ -600,7 +600,7 @@ def list_pending_documents(db:Session=Depends(get_db),u:User=Depends(require("su
         result.append({"id":doc.id,"college_id":doc.college_id,"college_name":college.name if college else "Unknown","filename":doc.filename,"file_type":doc.file_type,"file_size_bytes":doc.file_size_bytes,"submitted_at":doc.submitted_at.isoformat() if doc.submitted_at else None,"submitted_by":submitter.email if submitter else None,"status":doc.status,"summary":doc.summary,"rows_created":doc.rows_created})
     return {"documents":result}
 
-@api.get("/api/v1/super-admin/documents/{document_id}")
+@api.get("/super-admin/documents/{document_id}")
 def get_document_detail(document_id:int,db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     doc=db.get(CollegeDocument,document_id)
     if not doc: raise HTTPException(404,"Document not found")
@@ -615,7 +615,7 @@ def get_document_detail(document_id:int,db:Session=Depends(get_db),u:User=Depend
     changes=[{"id":c.id,"change_type":c.change_type,"table_name":c.table_name,"column_name":c.column_name,"column_type":c.column_type,"proposed_schema":c.proposed_schema} for c in staged_changes]
     return {"id":doc.id,"college_id":doc.college_id,"college_name":college.name if college else "Unknown","filename":doc.filename,"file_type":doc.file_type,"file_size_bytes":doc.file_size_bytes,"content_hash":doc.content_hash,"object_key":doc.object_key,"extracted_text":doc.extracted_text[:10000] if doc.extracted_text else None,"status":doc.status,"submitted_at":doc.submitted_at.isoformat() if doc.submitted_at else None,"submitted_by":submitter.email if submitter else None,"summary":doc.summary,"rows_created":doc.rows_created,"staged_rows":rows_by_table,"staged_changes":changes}
 
-@api.patch("/api/v1/super-admin/staged-rows/{row_id}")
+@api.patch("/super-admin/staged-rows/{row_id}")
 def edit_staged_row(row_id:int,proposed_value:str|None=None,status:str|None=None,db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     row=db.get(DocumentStagedRow,row_id)
     if not row: raise HTTPException(404,"Staged row not found")
@@ -624,7 +624,7 @@ def edit_staged_row(row_id:int,proposed_value:str|None=None,status:str|None=None
     db.commit()
     return {"id":row.id,"status":row.status,"proposed_value":row.proposed_value}
 
-@api.delete("/api/v1/super-admin/staged-rows/{row_id}")
+@api.delete("/super-admin/staged-rows/{row_id}")
 def remove_staged_row(row_id:int,db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     row=db.get(DocumentStagedRow,row_id)
     if not row: raise HTTPException(404,"Staged row not found")
@@ -632,7 +632,7 @@ def remove_staged_row(row_id:int,db:Session=Depends(get_db),u:User=Depends(requi
     db.commit()
     return {"removed":True}
 
-@api.post("/api/v1/super-admin/documents/{document_id}/approve")
+@api.post("/super-admin/documents/{document_id}/approve")
 def approve_document(document_id:int,db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     doc=db.get(CollegeDocument,document_id)
     if not doc or doc.status!="pending": raise HTTPException(404,"Document not found or not pending")
@@ -645,7 +645,7 @@ def approve_document(document_id:int,db:Session=Depends(get_db),u:User=Depends(r
         raise HTTPException(503,"Approval could not be queued; the document remains pending") from error
     return {"status":"pending","message":"Approval queued. College data will update after processing completes."}
 
-@api.post("/api/v1/super-admin/documents/{document_id}/reject")
+@api.post("/super-admin/documents/{document_id}/reject")
 def reject_document(document_id: int, req: RejectDocumentRequest, db: Session = Depends(get_db), u: User = Depends(require("super_admin"))):
     doc = db.get(CollegeDocument, document_id)
     if not doc or doc.status != "pending":
@@ -654,12 +654,12 @@ def reject_document(document_id: int, req: RejectDocumentRequest, db: Session = 
     db.commit()
     return {"status": "rejected", "reason": req.reason}
 
-@api.get("/api/v1/admin/documents")
+@api.get("/admin/documents")
 def list_college_documents(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
     docs=list(db.scalars(select(CollegeDocument).where(CollegeDocument.college_id==u.college_id).order_by(CollegeDocument.submitted_at.desc()).limit(50)))
     return {"documents":[{"id":d.id,"filename":d.filename,"file_type":d.file_type,"status":d.status,"submitted_at":d.submitted_at.isoformat() if d.submitted_at else None,"summary":d.summary,"reject_reason":d.reject_reason} for d in docs]}
 
-@api.post("/api/v1/admin/media")
+@api.post("/admin/media")
 async def upload_media(file:UploadFile=File(...),alt_text:str=Form(""),u:User=Depends(require("college_admin")),db:Session=Depends(get_db)):
     try:
         data=await file.read(10*1024*1024+1)
@@ -702,7 +702,7 @@ async def upload_media(file:UploadFile=File(...),alt_text:str=Form(""),u:User=De
         import traceback
         raise HTTPException(500,f"Media upload failed: {str(e)}") from e
 
-@api.get("/api/v1/colleges/{college_id}/media")
+@api.get("/colleges/{college_id}/media")
 def college_media(college_id:int,db:Session=Depends(get_db),u:User=Depends(current_user)):
     college=db.get(College,college_id)
     if not college or college.status!="approved": raise HTTPException(404,"College not found")
@@ -712,7 +712,7 @@ def college_media(college_id:int,db:Session=Depends(get_db),u:User=Depends(curre
         return [{"id":m.id,"alt_text":m.alt_text,"url":signed_url(m.object_key),"thumbnail_url":signed_url(m.thumbnail_key) if m.thumbnail_key else signed_url(m.object_key),"source_url":m.source_url} for m in db.scalars(select(MediaAsset).where(MediaAsset.college_id==college_id).order_by(MediaAsset.id.desc()).limit(100))]
     except Exception as exc: raise HTTPException(503,"S3-compatible media storage is unavailable") from exc
 
-@api.delete("/api/v1/admin/media/{media_id}")
+@api.delete("/admin/media/{media_id}")
 def delete_media(media_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     asset=db.get(MediaAsset,media_id)
     if not asset or asset.college_id!=u.college_id: raise HTTPException(404,"Media item not found")
@@ -722,7 +722,7 @@ def delete_media(media_id:int,db:Session=Depends(get_db),u:User=Depends(require(
     except Exception as exc: raise HTTPException(503,"Object storage is unavailable; media was not removed") from exc
     college=db.get(College,u.college_id); college.data_version+=1; db.delete(asset); db.commit(); return {"deleted":True}
 
-@api.post("/api/v1/chat/attachment")
+@api.post("/chat/attachment")
 async def chat_attachment(file: UploadFile = File(...), req: ChatAttachmentRequest = Form(None), db: Session = Depends(get_db), u: User = Depends(current_user)):
     question = req.question if req else ""
     language = req.language if req else "en-IN"
@@ -768,22 +768,22 @@ async def chat_attachment(file: UploadFile = File(...), req: ChatAttachmentReque
     db.add(assistant_msg); conv.updated_at = datetime.now(timezone.utc); db.commit()
     return {"message_id": assistant_msg.id, "content": answer, "conversation_id": conv.id}
 
-@api.get("/api/v1/account/profile")
+@api.get("/account/profile")
 def get_account_profile(u:User=Depends(current_user)):
     return {"name":u.name,"email":u.email}
 
-@api.patch("/api/v1/account/profile")
+@api.patch("/account/profile")
 def update_account_profile(req: UpdateProfileRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
     u.name = req.name[:160]; db.commit()
     return {"name": u.name}
 
-@api.get("/api/v1/account/export")
+@api.get("/account/export")
 def export_account_data(u:User=Depends(current_user),db:Session=Depends(get_db)):
     convs=list(db.scalars(select(Conversation).where(Conversation.user_id==u.id)))
     msgs=[{"conversation_id":m.conversation_id,"role":m.role,"content":m.content,"created_at":m.created_at.isoformat() if m.created_at else None} for m in db.scalars(select(Message).where(Message.conversation_id.in_([c.id for c in convs])))]
     return {"user":{"id":u.id,"name":u.name,"email":u.email},"conversations":[{"id":c.id,"title":c.title,"created_at":c.created_at.isoformat() if c.created_at else None} for c in convs],"messages":msgs}
 
-@api.delete("/api/v1/account/data")
+@api.delete("/account/data")
 def delete_account_data(u:User=Depends(current_user),db:Session=Depends(get_db)):
     conv_ids=[c.id for c in db.scalars(select(Conversation).where(Conversation.user_id==u.id))]
     for m in list(db.scalars(select(Message).where(Message.conversation_id.in_(conv_ids)))): db.query(Feedback).filter(Feedback.message_id==m.id).delete(synchronize_session=False)
@@ -791,7 +791,7 @@ def delete_account_data(u:User=Depends(current_user),db:Session=Depends(get_db))
     db.query(Conversation).filter(Conversation.id.in_(conv_ids)).delete(synchronize_session=False)
     return {"deleted":True}
 
-@api.delete("/api/v1/account/delete")
+@api.delete("/account/delete")
 def delete_account(req: DeleteAccountRequest, u: User = Depends(current_user), db: Session = Depends(get_db)):
     if not verify_password(req.password, u.password_hash):
         raise HTTPException(401, "Invalid password")
@@ -803,7 +803,7 @@ def delete_account(req: DeleteAccountRequest, u: User = Depends(current_user), d
     db.delete(u); db.commit()
     return {"deleted": True}
 
-@api.post("/api/v1/widget/chat")
+@api.post("/widget/chat")
 async def widget_chat(request:Request, body:dict, db:Session=Depends(get_db)):
     widget_key=request.headers.get("X-Widget-Key")
     if not widget_key: raise HTTPException(401,"Widget key required")
@@ -839,7 +839,7 @@ async def widget_chat(request:Request, body:dict, db:Session=Depends(get_db)):
     db.commit()
     return JSONResponse({"answer":answer,"source_badge":assistant_msg.source_badge,"sources":locals().get("sources",[])},headers={"Access-Control-Allow-Origin":request.headers.get("Origin","*"),"Vary":"Origin"})
 
-@api.post("/api/v1/widget/request")
+@api.post("/widget/request")
 def widget_request(body:dict,db:Session=Depends(get_db)):
     widget_key=body.get("widget_key")
     if not widget_key: raise HTTPException(400,"Widget key required")
@@ -849,7 +849,7 @@ def widget_request(body:dict,db:Session=Depends(get_db)):
     db.commit()
     return {"registered":True}
 
-@api.get("/api/v1/admin/usage")
+@api.get("/admin/usage")
 def admin_usage(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor","viewer"))):
     cid=u.college_id
     pages=db.scalar(select(func.count(Page.id)).where(Page.college_id==cid))
@@ -857,7 +857,7 @@ def admin_usage(db:Session=Depends(get_db),u:User=Depends(require("college_admin
     ai_tokens=db.scalar(select(func.coalesce(func.sum(AIUsage.tokens),0)).where(AIUsage.college_id==cid)) or 0
     return {"pages":pages,"crawls_today":0,"media_bytes":media_bytes,"ai_tokens_this_month":ai_tokens,"quotas":{"pages":10000,"crawls_per_day":20,"storage_mb":1024,"ai_tokens_month":500000},"page_percent":round(pages/10000*100,1),"crawl_percent":0,"storage_percent":round(media_bytes/1024/1024/1024*100,1),"token_percent":round(ai_tokens/500000*100,1),"alerts":[]}
 
-@api.get("/api/v1/admin/analytics")
+@api.get("/admin/analytics")
 def analytics(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor","viewer"))):
     cid=u.college_id
     today=datetime.now(ZoneInfo("Asia/Kolkata")).date(); first_day=today-timedelta(days=6)
@@ -880,13 +880,13 @@ def analytics(db:Session=Depends(get_db),u:User=Depends(require("college_admin",
     slow=[{"question":row.raw_question[:200],"response_ms":row.response_ms} for row in rows if row.response_ms and row.response_ms>5000][:10]
     return {"questions_today":daily.get(today.isoformat(),{}).get("questions",0),"unanswered_week":sum(d["unanswered"] for d in daily.values()),"satisfaction_percent":satisfaction,"p95_response_ms":p95,"daily":daily,"top_topics":sorted(topics.items(),key=lambda x:-x[1])[:10],"slow_answers":slow,"feedback_total":len(feedback_rows)}
 
-@api.get("/api/v1/admin/widget")
+@api.get("/admin/widget")
 def get_widget_settings(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     college=db.get(College,u.college_id)
     if not college: raise HTTPException(404,"College not found")
     return {"allowed_domains":college.allowed_domains or [],"feature_flags":college.feature_flags or {"voice":True,"widget":True,"semantic_search":True},"embed_script":f'<script src="{settings.public_base_url}/widget.js" data-key="{college.widget_key or ""}"></script>'}
 
-@api.patch("/api/v1/admin/college-settings")
+@api.patch("/admin/college-settings")
 def update_college_settings(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     college=db.get(College,u.college_id)
     if not college: raise HTTPException(404,"College not found")
@@ -895,12 +895,12 @@ def update_college_settings(body:dict,db:Session=Depends(get_db),u:User=Depends(
     college.data_version+=1; db.commit()
     return {"updated":True}
 
-@api.get("/api/v1/admin/crawl-schedule")
+@api.get("/admin/crawl-schedule")
 def get_crawl_schedule(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     schedule=db.scalar(select(CrawlSchedule).where(CrawlSchedule.college_id==u.college_id))
     return {"enabled":bool(schedule and schedule.enabled),"url":schedule.url if schedule else ""}
 
-@api.put("/api/v1/admin/crawl-schedule")
+@api.put("/admin/crawl-schedule")
 def update_crawl_schedule(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     enabled=body.get("enabled",False)
     url=body.get("url","")[:500]
@@ -913,7 +913,7 @@ def update_crawl_schedule(body:dict,db:Session=Depends(get_db),u:User=Depends(re
     db.commit()
     return {"enabled":enabled,"url":url}
 
-@api.post("/api/v1/admin/crawl")
+@api.post("/admin/crawl")
 def start_crawl(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     url=body.get("url","")[:500]
     if not url: raise HTTPException(400,"URL required")
@@ -929,30 +929,30 @@ def start_crawl(body:dict,db:Session=Depends(get_db),u:User=Depends(require("col
         logger.exception("crawl dispatch failed college_id=%s",u.college_id)
         raise HTTPException(500,f"Crawl failed to start: {str(e)}") from e
 
-@api.get("/api/v1/admin/sources")
+@api.get("/admin/sources")
 def list_sources(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     sources=list(db.scalars(select(CollegeSource).where(CollegeSource.college_id==u.college_id)))
     return [{"id":s.id,"url":s.url,"type":s.type,"priority":s.priority,"campus":s.campus} for s in sources]
 
-@api.post("/api/v1/admin/sources")
+@api.post("/admin/sources")
 def add_source(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     source=CollegeSource(college_id=u.college_id,url=body.get("url","")[:500],type=body.get("type","department site")[:40],priority=body.get("priority",2),campus=body.get("campus","")[:180])
     db.add(source); db.commit()
     return {"id":source.id}
 
-@api.delete("/api/v1/admin/sources/{source_id}")
+@api.delete("/admin/sources/{source_id}")
 def delete_source(source_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     source=db.get(CollegeSource,source_id)
     if not source or source.college_id!=u.college_id: raise HTTPException(404,"Source not found")
     db.delete(source); db.commit()
     return {"deleted":True}
 
-@api.get("/api/v1/admin/knowledge-gaps")
+@api.get("/admin/knowledge-gaps")
 def list_knowledge_gaps(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
     gaps=list(db.scalars(select(KnowledgeGap).where(KnowledgeGap.college_id==u.college_id).order_by(KnowledgeGap.count.desc()).limit(50)))
     return [{"id":g.id,"question":g.question,"count":g.count} for g in gaps]
 
-@api.post("/api/v1/admin/knowledge-gaps/{gap_id}/answer")
+@api.post("/admin/knowledge-gaps/{gap_id}/answer")
 def answer_knowledge_gap(gap_id:int,body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
     gap=db.get(KnowledgeGap,gap_id)
     if not gap or gap.college_id!=u.college_id: raise HTTPException(404,"Gap not found")
@@ -960,40 +960,40 @@ def answer_knowledge_gap(gap_id:int,body:dict,db:Session=Depends(get_db),u:User=
     db.add(fact); db.delete(gap); db.commit()
     return {"answered":True}
 
-@api.get("/api/v1/admin/custom-fields")
+@api.get("/admin/custom-fields")
 def list_custom_fields(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     fields=list(db.scalars(select(CustomField).where(CustomField.college_id==u.college_id)))
     return [{"id":f.id,"table_name":f.table_name,"field_name":f.field_name,"field_type":f.field_type} for f in fields]
 
-@api.post("/api/v1/admin/custom-fields")
+@api.post("/admin/custom-fields")
 def add_custom_field(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     field=CustomField(college_id=u.college_id,table_name=body.get("table_name","other_facts")[:100],field_name=body.get("field_name","")[:100],field_type=body.get("field_type","text")[:50])
     db.add(field); db.commit()
     return {"id":field.id}
 
-@api.get("/api/v1/admin/members")
+@api.get("/admin/members")
 def list_members(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     members=list(db.scalars(select(User).where(User.college_id==u.college_id)))
     return [{"id":m.id,"name":m.name,"email":m.email,"role":m.role} for m in members]
 
-@api.delete("/api/v1/admin/members/{member_id}")
+@api.delete("/admin/members/{member_id}")
 def remove_member(member_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     member=db.get(User,member_id)
     if not member or member.college_id!=u.college_id: raise HTTPException(404,"Member not found")
     member.college_id=None; member.role="user"; db.commit()
     return {"removed":True}
 
-@api.post("/api/v1/admin/invitations")
+@api.post("/admin/invitations")
 def create_invitation(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     invite=CollegeInvitation(college_id=u.college_id,email=body.get("email","")[:255],role=body.get("role","editor"))
     db.add(invite); db.commit()
     return {"id":invite.id,"development_token":secrets.token_urlsafe(8)[:12] if settings.app_env=="development" else None}
 
-@api.get("/api/v1/admin/college-export")
+@api.get("/admin/college-export")
 def college_export(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     return {"college_id":u.college_id,"facts":[{"category":f.category,"title":f.title,"value":f.value,"extra":f.extra} for f in db.scalars(select(Fact).where(Fact.college_id==u.college_id))],"pages":[{"url":p.url,"title":p.title,"content_hash":p.content_hash} for p in db.scalars(select(Page).where(Page.college_id==u.college_id))]}
 
-@api.post("/api/v1/super/support-view")
+@api.post("/super/support-view")
 def support_view(body:dict,db:Session=Depends(get_db),u:User=Depends(require("super_admin"))):
     cid=int(body.get("college_id",0)); reason=str(body.get("reason", ""))[:1000]
     if not reason or not db.get(College,cid): raise HTTPException(400,"College and support reason are required")
