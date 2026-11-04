@@ -11,7 +11,7 @@
     "start:admin": "next start admin-app -p 3001 -H 0.0.0.0"
   },
   "dependencies": {
-    "next": "16.4.1",
+    "next": "16.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-markdown": "9.0.3",
