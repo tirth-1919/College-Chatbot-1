@@ -971,6 +971,137 @@ def add_custom_field(body:dict,db:Session=Depends(get_db),u:User=Depends(require
     db.add(field); db.commit()
     return {"id":field.id}
 
+@api.get("/admin/crawls")
+def list_crawls(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    crawls=list(db.scalars(select(CrawlJob).where(CrawlJob.college_id==u.college_id).order_by(CrawlJob.created_at.desc()).limit(50)))
+    return [{"id":c.id,"url":c.url,"status":c.status,"pages_found":c.pages_found,"pages_done":c.pages_done,"created_at":c.created_at.isoformat() if c.created_at else None} for c in crawls]
+
+@api.post("/admin/crawls/{job_id}/stop")
+def stop_crawl(job_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    job=db.get(CrawlJob,job_id)
+    if not job or job.college_id!=u.college_id: raise HTTPException(404,"Crawl not found")
+    if job.status not in {"queued","running"}: raise HTTPException(400,"Crawl cannot be stopped")
+    job.status="stopped"; job.stopped_by=u.id; job.finished_at=datetime.now(timezone.utc); db.commit()
+    return {"stopped":True}
+
+@api.post("/admin/crawls/{job_id}/restart")
+def restart_crawl(job_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    job=db.get(CrawlJob,job_id)
+    if not job or job.college_id!=u.college_id: raise HTTPException(404,"Crawl not found")
+    if job.status not in {"stopped","failed"}: raise HTTPException(400,"Crawl can only restart from stopped or failed")
+    from .crawler import crawl_college
+    try:
+        new_job_id=crawl_college(u.college_id,job.url)
+        return {"restarted":True,"new_job_id":new_job_id}
+    except Exception as e:
+        raise HTTPException(500,f"Could not restart crawl: {str(e)}")
+
+@api.get("/admin/notifications")
+def list_notifications(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    notifs=list(db.scalars(select(Notification).where(Notification.college_id==u.college_id).order_by(Notification.created_at.desc()).limit(50)))
+    return [{"id":n.id,"kind":n.kind,"title":n.title,"created_at":n.created_at.isoformat() if n.created_at else None} for n in notifs]
+
+@api.post("/admin/notifications/{notification_id}/read")
+def mark_notification_read(notification_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    n=db.get(Notification,notification_id)
+    if not n or n.college_id!=u.college_id: raise HTTPException(404,"Notification not found")
+    n.read_at=datetime.now(timezone.utc); db.commit()
+    return {"read":True}
+
+@api.get("/admin/conflicts")
+def list_conflicts(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    pages=list(db.scalars(select(Page).where(Page.college_id==u.college_id,Page.has_conflict==True).order_by(Page.created_at.desc()).limit(50)))
+    return [{"id":p.id,"url":p.url,"title":p.title,"created_at":p.created_at.isoformat() if p.created_at else None} for p in pages]
+
+@api.get("/admin/facts")
+def list_facts(category:str="",db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    query=select(Fact).where(Fact.college_id==u.college_id)
+    if category: query=query.where(Fact.category==category)
+    facts=list(db.scalars(query.order_by(Fact.updated_at.desc()).limit(200)))
+    return [{"id":f.id,"category":f.category,"title":f.title,"value":f.value[:500],"confidence":f.confidence,"updated_at":f.updated_at.isoformat() if f.updated_at else None} for f in facts]
+
+@api.post("/admin/facts")
+def create_fact(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    fact=Fact(college_id=u.college_id,category=body.get("category","general")[:100],title=body.get("title","")[:300],value=body.get("value","")[:50000],confidence=body.get("confidence",0.9))
+    db.add(fact); db.commit()
+    return {"id":fact.id}
+
+@api.patch("/admin/facts/{fact_id}")
+def update_fact(fact_id:int,body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    fact=db.get(Fact,fact_id)
+    if not fact or fact.college_id!=u.college_id: raise HTTPException(404,"Fact not found")
+    if "title" in body: fact.title=body["title"][:300]
+    if "value" in body: fact.value=body["value"][:50000]
+    if "category" in body: fact.category=body["category"][:100]
+    db.commit()
+    return {"updated":True}
+
+@api.delete("/admin/facts/{fact_id}")
+def delete_fact(fact_id:int,db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    fact=db.get(Fact,fact_id)
+    if not fact or fact.college_id!=u.college_id: raise HTTPException(404,"Fact not found")
+    db.delete(fact); db.commit()
+    return {"deleted":True}
+
+@api.get("/admin/college-location")
+def get_college_location(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    college=db.get(College,u.college_id)
+    if not college: raise HTTPException(404,"College not found")
+    return {"address":college.address,"city":college.city,"state":college.state,"country":college.country,"latitude":college.latitude,"longitude":college.longitude}
+
+@api.patch("/admin/college-location")
+def update_college_location(body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    college=db.get(College,u.college_id)
+    if not college: raise HTTPException(404,"College not found")
+    if "address" in body: college.address=body["address"]
+    if "city" in body: college.city=body["city"]
+    if "state" in body: college.state=body["state"]
+    if "latitude" in body: college.latitude=body["latitude"]
+    if "longitude" in body: college.longitude=body["longitude"]
+    db.commit()
+    return {"updated":True}
+
+@api.get("/admin/enquiries")
+def list_enquiries(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    enquiries=list(db.scalars(select(Enquiry).where(Enquiry.college_id==u.college_id).order_by(Enquiry.created_at.desc()).limit(50)))
+    return [{"id":e.id,"name":e.name,"email":e.email,"message":e.message[:200],"status":e.status,"created_at":e.created_at.isoformat() if e.created_at else None} for e in enquiries]
+
+@api.patch("/admin/enquiries/{enquiry_id}")
+def update_enquiry(enquiry_id:int,body:dict,db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    enquiry=db.get(Enquiry,enquiry_id)
+    if not enquiry or enquiry.college_id!=u.college_id: raise HTTPException(404,"Enquiry not found")
+    if "status" in body: enquiry.status=body["status"]
+    db.commit()
+    return {"updated":True}
+
+@api.get("/admin/ai-settings")
+def get_ai_settings(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    college=db.get(College,u.college_id)
+    if not college: raise HTTPException(404,"College not found")
+    return {"ai_provider_order":settings.ai_provider_order,"gemini_configured":bool(settings.gemini_api_key),"xkiro_configured":bool(settings.xkiro_api_key)}
+
+@api.get("/admin/facts/export")
+def export_facts(db:Session=Depends(get_db),u:User=Depends(require("college_admin","editor"))):
+    facts=list(db.scalars(select(Fact).where(Fact.college_id==u.college_id)))
+    output=io.StringIO()
+    writer=csv.writer(output)
+    writer.writerow(["category","title","value","confidence"])
+    for f in facts:
+        writer.writerow([f.category,f.title,f.value,f.confidence])
+    return Response(content=output.getvalue(),media_type="text/csv",headers={"Content-Disposition":"attachment; filename=facts.csv"})
+
+@api.post("/admin/facts/import")
+async def import_facts(file:UploadFile=File(...),db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
+    data=await file.read()
+    reader=csv.DictReader(io.StringIO(data.decode("utf-8")))
+    imported=0
+    for row in reader:
+        if row.get("title") and row.get("value"):
+            fact=Fact(college_id=u.college_id,category=row.get("category","general")[:100],title=row["title"][:300],value=row["value"][:50000],confidence=float(row.get("confidence",0.9)))
+            db.add(fact); imported+=1
+    db.commit()
+    return {"imported":imported}
+
 @api.get("/admin/members")
 def list_members(db:Session=Depends(get_db),u:User=Depends(require("college_admin"))):
     members=list(db.scalars(select(User).where(User.college_id==u.college_id)))
